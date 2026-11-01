@@ -11,12 +11,14 @@ import {
 import * as pdfjsLib from "pdfjs-dist";
 
 // Configure PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+if (typeof window !== "undefined") {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+}
 
 export default function DocumentViewer({
   file,
   filename,
-  totalPages = 1,
+  totalPages: propTotalPages = 1,
   pdfBlobUrl,
   onUpload,
   loading,
@@ -25,119 +27,164 @@ export default function DocumentViewer({
 }) {
   const [zoom, setZoom] = useState(100);
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalNumPages, setTotalNumPages] = useState(totalPages || 1);
-  const [pdfDoc, setPdfDoc] = useState(null);
-  const [pdfLoading, setPdfLoading] = useState(false);
-  const [renderError, setRenderError] = useState(false);
+  const [totalPages, setTotalPages] = useState(propTotalPages || 1);
   const [dragActive, setDragActive] = useState(false);
+  const [renderingPdf, setRenderingPdf] = useState(false);
+  const [renderError, setRenderError] = useState(false);
+  const [renderedPages, setRenderedPages] = useState([]);
 
-  const containerRef = useRef(null);
   const fileInputRef = useRef(null);
-  const pagesContainerRef = useRef(null);
+  const scrollContainerRef = useRef(null);
+  const pageRefs = useRef({});
+  const isNavigatingByClick = useRef(false);
 
-  // Load PDF with PDF.js whenever file or pdfBlobUrl changes
+  // Sync propTotalPages
   useEffect(() => {
-    let active = true;
+    if (propTotalPages && propTotalPages > 1) {
+      setTotalPages(propTotalPages);
+    }
+  }, [propTotalPages]);
 
-    async function loadPdf() {
-      if (!file && !pdfBlobUrl) {
-        setPdfDoc(null);
-        setTotalNumPages(1);
-        setCurrentPage(1);
-        return;
-      }
+  // Render PDF pages using PDF.js
+  useEffect(() => {
+    if (!pdfBlobUrl) {
+      setRenderedPages([]);
+      setCurrentPage(1);
+      return;
+    }
 
-      setPdfLoading(true);
-      setRenderError(false);
+    let isMounted = true;
+    setRenderingPdf(true);
+    setRenderError(false);
+    setCurrentPage(1);
 
+    async function loadAndRenderPdf() {
       try {
-        let loadingTask;
-        if (file && typeof file.arrayBuffer === "function") {
-          const buffer = await file.arrayBuffer();
-          loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
-        } else {
-          loadingTask = pdfjsLib.getDocument(pdfBlobUrl);
+        const loadingTask = pdfjsLib.getDocument(pdfBlobUrl);
+        const pdf = await loadingTask.promise;
+
+        if (!isMounted) return;
+
+        const numPages = pdf.numPages;
+        setTotalPages(numPages);
+
+        const pagesList = Array.from({ length: numPages }, (_, i) => i + 1);
+        setRenderedPages(pagesList);
+        setRenderingPdf(false);
+
+        // Render each page into its canvas
+        for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+          if (!isMounted) break;
+          try {
+            const page = await pdf.getPage(pageNum);
+            // Render at high resolution (1.5x) for crisp text
+            const viewport = page.getViewport({ scale: 1.5 });
+            const canvas = pageRefs.current[pageNum];
+            if (canvas) {
+              const context = canvas.getContext("2d");
+              canvas.height = viewport.height;
+              canvas.width = viewport.width;
+
+              const renderContext = {
+                canvasContext: context,
+                viewport: viewport,
+              };
+              await page.render(renderContext).promise;
+            }
+          } catch (pageErr) {
+            console.error(`Error rendering page ${pageNum}:`, pageErr);
+          }
         }
-
-        const doc = await loadingTask.promise;
-        if (!active) return;
-
-        setPdfDoc(doc);
-        setTotalNumPages(doc.numPages);
-        setCurrentPage(1);
       } catch (err) {
-        console.error("PDF.js load error:", err);
-        if (active) setRenderError(true);
-      } finally {
-        if (active) setPdfLoading(false);
+        console.error("PDF.js render error, fallback to iframe:", err);
+        if (isMounted) {
+          setRenderError(true);
+          setRenderingPdf(false);
+        }
       }
     }
 
-    loadPdf();
+    loadAndRenderPdf();
 
     return () => {
-      active = false;
+      isMounted = false;
     };
-  }, [file, pdfBlobUrl]);
+  }, [pdfBlobUrl]);
 
-  // Synchronize currentPage when scrolling down or up the document
-  const handleScroll = useCallback(() => {
-    const container = containerRef.current;
-    if (!container || !pdfDoc) return;
+  // IntersectionObserver to detect which page is in view when scrolling
+  useEffect(() => {
+    if (renderedPages.length === 0 || renderError) return;
 
-    const pageCards = container.querySelectorAll(".pdf-page-card");
-    if (!pageCards.length) return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
 
-    const containerTop = container.scrollTop;
-    const containerHeight = container.clientHeight;
-    const checkLine = containerTop + containerHeight * 0.35; // Trigger at 35% from the top
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // If the user clicked the arrow, skip updating until scroll finishes
+        if (isNavigatingByClick.current) return;
 
-    let foundPage = 1;
+        // Find the entry that has the highest intersection ratio
+        let bestEntry = null;
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            if (!bestEntry || entry.intersectionRatio > bestEntry.intersectionRatio) {
+              bestEntry = entry;
+            }
+          }
+        });
 
-    for (let i = 0; i < pageCards.length; i++) {
-      const card = pageCards[i];
-      const cardTop = card.offsetTop;
-      const cardBottom = cardTop + card.clientHeight;
-
-      if (cardTop <= checkLine && cardBottom >= checkLine) {
-        foundPage = i + 1;
-        break;
-      } else if (cardTop > checkLine) {
-        // Passed the line, break with previous page
-        break;
-      } else {
-        foundPage = i + 1;
+        if (bestEntry) {
+          const pageNum = parseInt(bestEntry.target.getAttribute("data-page"), 10);
+          if (pageNum && !isNaN(pageNum)) {
+            setCurrentPage(pageNum);
+          }
+        }
+      },
+      {
+        root: container,
+        threshold: [0.1, 0.3, 0.5, 0.7],
       }
+    );
+
+    // Observe all page elements
+    renderedPages.forEach((pageNum) => {
+      const el = document.getElementById(`pdf-page-wrapper-${pageNum}`);
+      if (el) observer.observe(el);
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [renderedPages, renderError]);
+
+  // Navigate to target page smoothly and update counter
+  const scrollToPage = useCallback((targetPage) => {
+    if (targetPage < 1 || targetPage > totalPages) return;
+
+    setCurrentPage(targetPage);
+    isNavigatingByClick.current = true;
+
+    const targetEl = document.getElementById(`pdf-page-wrapper-${targetPage}`);
+    if (targetEl) {
+      targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
-    setCurrentPage(foundPage);
-  }, [pdfDoc]);
+    setTimeout(() => {
+      isNavigatingByClick.current = false;
+    }, 600);
+  }, [totalPages]);
 
-  // Zoom controls
-  const handleZoomIn = () => setZoom((prev) => Math.min(prev + 10, 200));
-  const handleZoomOut = () => setZoom((prev) => Math.max(prev - 10, 60));
-
-  // Navigate to previous page on `<` click
   const handlePrevPage = () => {
-    const targetPage = Math.max(currentPage - 1, 1);
-    scrollToPage(targetPage);
+    scrollToPage(currentPage - 1);
   };
 
-  // Navigate to next page on `>` click
   const handleNextPage = () => {
-    const targetPage = Math.min(currentPage + 1, totalNumPages);
-    scrollToPage(targetPage);
+    scrollToPage(currentPage + 1);
   };
 
-  const scrollToPage = (pageNum) => {
-    const card = document.getElementById(`pdf-page-card-${pageNum}`);
-    if (card) {
-      card.scrollIntoView({ behavior: "smooth", block: "start" });
-      setCurrentPage(pageNum);
-    }
-  };
+  const handleZoomIn = () => setZoom((prev) => Math.min(prev + 10, 200));
+  const handleZoomOut = () => setZoom((prev) => Math.max(prev - 10, 50));
 
-  // Drag and drop handlers
   const handleDrag = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -194,16 +241,15 @@ export default function DocumentViewer({
       <div className="viewer-sub-bar">
         <span className="sub-bar-label">
           {filename
-            ? `Active PDF Document • Page ${currentPage} of ${totalNumPages || 1}`
+            ? `Active PDF Document • Page ${currentPage} of ${totalPages}`
             : "Upload a PDF to view and analyze"}
         </span>
       </div>
 
-      {/* Main Content Scroll Area */}
+      {/* Main Content Area */}
       <div
-        ref={containerRef}
+        ref={scrollContainerRef}
         className={`viewer-canvas-scroll ${dragActive ? "drag-active" : ""}`}
-        onScroll={handleScroll}
         onDragEnter={handleDrag}
         onDragLeave={handleDrag}
         onDragOver={handleDrag}
@@ -217,18 +263,19 @@ export default function DocumentViewer({
           onChange={handleFileChange}
         />
 
-        {loading || pdfLoading ? (
+        {loading || renderingPdf ? (
           <div className="viewer-empty-state">
             <LoaderCircle size={42} className="spin text-blue" />
-            <h3>Processing PDF with AI...</h3>
-            <p>Rendering pages and building vector search index.</p>
+            <h3>{loading ? "Processing PDF with AI..." : "Rendering pages..."}</h3>
+            <p>
+              {loading
+                ? "Extracting text, generating embeddings, and building search index."
+                : "Rendering high-resolution document pages."}
+            </p>
           </div>
-        ) : !pdfDoc && !pdfBlobUrl ? (
+        ) : !pdfBlobUrl ? (
           /* Empty / Upload Dropzone State */
-          <div
-            className="viewer-upload-dropzone"
-            onClick={() => fileInputRef.current?.click()}
-          >
+          <div className="viewer-upload-dropzone" onClick={() => fileInputRef.current?.click()}>
             <div className="upload-circle-icon">
               <UploadCloud size={38} />
             </div>
@@ -250,44 +297,50 @@ export default function DocumentViewer({
             </button>
             <span className="dropzone-note">PDF only • Up to 10 MB</span>
           </div>
-        ) : pdfDoc && !renderError ? (
-          /* Real Continuous Multi-Page Canvas Viewer */
-          <div
-            ref={pagesContainerRef}
-            className="pdf-pages-stream"
-            style={{
-              transform: `scale(${zoom / 100})`,
-              transformOrigin: "top center",
-            }}
-          >
-            {Array.from({ length: totalNumPages }, (_, idx) => (
-              <PdfCanvasPage
-                key={`page-${idx + 1}`}
-                pageNumber={idx + 1}
-                pdfDoc={pdfDoc}
-              />
-            ))}
-          </div>
-        ) : (
-          /* Graceful Iframe Fallback */
+        ) : renderError ? (
+          /* Fallback native iframe viewer if browser blocks worker */
           <div
             className="pdf-container"
-            style={{
-              transform: `scale(${zoom / 100})`,
-              transformOrigin: "top center",
-            }}
+            style={{ transform: `scale(${zoom / 100})`, transformOrigin: "top center" }}
           >
             <iframe
-              src={`${pdfBlobUrl}#toolbar=0&navpanes=0`}
+              src={`${pdfBlobUrl}#toolbar=0&navpanes=0&page=${currentPage}`}
               title="PDF Document Preview"
               className="pdf-iframe"
             />
           </div>
+        ) : (
+          /* High-Fidelity Continuous PDF Page View with Scroll & Page Sync */
+          <div
+            className="pdf-pages-scroll-stack"
+            style={{
+              transform: `scale(${zoom / 100})`,
+              transformOrigin: "top center",
+              transition: "transform 0.15s ease",
+            }}
+          >
+            {renderedPages.map((pageNum) => (
+              <div
+                key={pageNum}
+                id={`pdf-page-wrapper-${pageNum}`}
+                data-page={pageNum}
+                className={`pdf-single-page-card ${currentPage === pageNum ? "active-page" : ""}`}
+              >
+                <div className="page-watermark-tag">Page {pageNum}</div>
+                <canvas
+                  ref={(el) => {
+                    if (el) pageRefs.current[pageNum] = el;
+                  }}
+                  className="pdf-page-canvas"
+                />
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
-      {/* Floating Bottom Toolbar with Working Page Indicator */}
-      {(pdfDoc || pdfBlobUrl) && (
+      {/* Floating Bottom Toolbar (Only when document is active) */}
+      {pdfBlobUrl && !loading && (
         <div className="viewer-floating-toolbar">
           <div className="toolbar-zoom-group">
             <button className="toolbar-btn" onClick={handleZoomOut} title="Zoom out">
@@ -303,7 +356,6 @@ export default function DocumentViewer({
 
           <div className="toolbar-page-group">
             <button
-              type="button"
               className="toolbar-btn"
               onClick={handlePrevPage}
               disabled={currentPage <= 1}
@@ -311,16 +363,13 @@ export default function DocumentViewer({
             >
               <ChevronLeft size={16} />
             </button>
-
             <span className="page-text">
-              {currentPage} / {totalNumPages || 1}
+              {currentPage} / {totalPages}
             </span>
-
             <button
-              type="button"
               className="toolbar-btn"
               onClick={handleNextPage}
-              disabled={currentPage >= (totalNumPages || 1)}
+              disabled={currentPage >= totalPages}
               title="Next page"
             >
               <ChevronRight size={16} />
@@ -328,66 +377,6 @@ export default function DocumentViewer({
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// Individual PDF Canvas Page Component
-function PdfCanvasPage({ pageNumber, pdfDoc }) {
-  const canvasRef = useRef(null);
-  const [rendered, setRendered] = useState(false);
-
-  useEffect(() => {
-    let cancel = false;
-    let renderTask = null;
-
-    async function renderPage() {
-      if (!pdfDoc || !canvasRef.current) return;
-
-      try {
-        const page = await pdfDoc.getPage(pageNumber);
-        if (cancel) return;
-
-        // Render at high resolution (1.4 scale) for crisp, clear text
-        const viewport = page.getViewport({ scale: 1.4 });
-        const canvas = canvasRef.current;
-        const context = canvas.getContext("2d");
-
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
-
-        renderTask = page.render({
-          canvasContext: context,
-          viewport: viewport,
-        });
-
-        await renderTask.promise;
-        if (!cancel) setRendered(true);
-      } catch (err) {
-        if (err?.name !== "RenderingCancelledException") {
-          console.error(`Page ${pageNumber} render error:`, err);
-        }
-      }
-    }
-
-    renderPage();
-
-    return () => {
-      cancel = true;
-      if (renderTask) {
-        renderTask.cancel();
-      }
-    };
-  }, [pdfDoc, pageNumber]);
-
-  return (
-    <div
-      id={`pdf-page-card-${pageNumber}`}
-      className="pdf-page-card"
-      data-page-number={pageNumber}
-    >
-      <canvas ref={canvasRef} className="pdf-page-canvas" />
-      <div className="pdf-page-badge">{pageNumber}</div>
     </div>
   );
 }
