@@ -95,27 +95,30 @@ function App() {
     if (!file) return;
 
     setUploadLoading(true);
+    let localBlob = null;
 
     try {
+      localBlob = URL.createObjectURL(file);
+
+      const result = await uploadPDF(file);
+      const oldDocId = documentId;
+
       if (pdfBlobUrl) {
         URL.revokeObjectURL(pdfBlobUrl);
       }
-      const localBlob = URL.createObjectURL(file);
+
       setPdfFile(file);
       setPdfBlobUrl(localBlob);
-      setFilename(file.name);
+      setDocumentId(result.document_id);
+      setFilename(result.filename || file.name);
+      setTotalPages(result.total_pages || 1);
+
       const formattedDate = new Date().toLocaleDateString("en-GB", {
         day: "numeric",
         month: "short",
         year: "numeric",
       });
       setUploadDate(formattedDate);
-
-      const result = await uploadPDF(file);
-      const oldDocId = documentId;
-      setDocumentId(result.document_id);
-      setFilename(result.filename || file.name);
-      setTotalPages(result.total_pages || 1);
 
       // Add a greeting for the newly uploaded document
       setMessages((prev) => [
@@ -132,14 +135,27 @@ function App() {
         deleteDocument(oldDocId).catch(() => {});
       }
     } catch (err) {
-      alert(
-        err.message ||
-          "Upload failed. Please check that your backend is running or configured via Settings (gear icon)."
-      );
+      if (localBlob) {
+        URL.revokeObjectURL(localBlob);
+      }
+      setPdfFile(null);
+      setPdfBlobUrl(null);
+      setFilename("");
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          text: `Upload failed: ${err.message || "Request failed."} Please make sure your backend is running or check the Settings (gear icon) at the top right.`,
+          time: formatCurrentTime(),
+        },
+      ]);
     } finally {
       setUploadLoading(false);
     }
   };
+
 
   const handleSendQuestion = async (question) => {
     if (!question.trim()) return;

@@ -275,13 +275,15 @@ def chat_with_pdf(request: ChatRequest):
         print(f"Question received: {question}")
 
         # Search relevant PDF chunks
+        k = min(len(document["chunks"]), 6)
         relevant_chunks = search_similar_chunks(
             question=question,
             index=document["index"],
             chunks=document["chunks"],
             embedding_model=embedding_model,
-            top_k=4,
+            top_k=k,
         )
+
 
         # Check search results
         if not relevant_chunks:

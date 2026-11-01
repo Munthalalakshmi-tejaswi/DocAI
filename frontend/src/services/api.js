@@ -1,9 +1,22 @@
 export function getApiBaseUrl() {
   if (typeof window !== "undefined") {
     const saved = localStorage.getItem("docai_api_url");
-    if (saved && saved.trim()) return saved.trim().replace(/\/$/, "");
+    // Clear out the invalid third-party URL if it was accidentally saved
+    if (saved && saved.includes("docai-backend.onrender.com")) {
+      localStorage.removeItem("docai_api_url");
+    } else if (saved && saved.trim()) {
+      return saved.trim().replace(/\/$/, "");
+    }
+
+    // If running on localhost / 127.0.0.1, ALWAYS use the local backend!
+    const hostname = window.location.hostname;
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0") {
+      return "http://127.0.0.1:8000";
+    }
   }
-  return (import.meta.env.VITE_API_URL || "https://docai-backend.onrender.com").replace(/\/$/, "");
+
+  // In cloud production, use configured VITE_API_URL or default to empty for reverse proxy
+  return (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 }
 
 export function setApiBaseUrl(url) {
@@ -18,12 +31,15 @@ export function setApiBaseUrl(url) {
 
 async function request(path, options) {
   const baseUrl = getApiBaseUrl();
+  const url = baseUrl ? `${baseUrl}${path}` : path;
   let response;
+
   try {
-    response = await fetch(`${baseUrl}${path}`, options);
+    response = await fetch(url, options);
   } catch (err) {
+    const targetMsg = baseUrl || "local backend (http://127.0.0.1:8000)";
     throw new Error(
-      `Cannot connect to backend at ${baseUrl}. If using Render free tier, it may take 40-50s to wake up from idle. Check settings or verify backend status.`
+      `Cannot connect to backend at ${targetMsg}. Please make sure your backend is running, or configure your API URL via Settings (gear icon).`
     );
   }
 
