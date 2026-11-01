@@ -84,6 +84,29 @@ def generate_answer(
         )
         return response.message.content.strip()
     except Exception as exc:
+        exc_str = str(exc)
+        # If running in cloud environment (e.g. Render) without Ollama and without Groq key, provide an extractive grounded response:
+        if (
+            "Failed to connect to Ollama" in exc_str
+            or "ConnectionRefused" in exc_str
+            or "ConnectError" in exc_str
+            or "111" in exc_str
+            or "connect" in exc_str.lower()
+        ):
+            bullets = []
+            for chunk in retrieved_chunks:
+                p = chunk.get("page", 1)
+                text = chunk.get("text", "").strip()
+                clean_snippet = " ".join(text.split())
+                bullets.append(f"- **[Page {p}]**: {clean_snippet}")
+
+            return (
+                "Here is the relevant information extracted directly from the document:\n\n"
+                + "\n\n".join(bullets)
+                + "\n\n---\n"
+                + "*Tip: For full conversational AI reasoning in under 1 second, add a free Groq API key in the top-right Settings (get one free at https://console.groq.com/keys).*"
+            )
+
         raise RuntimeError(
             f"Could not get a response from AI engine ({model_name}): {exc}. "
             "If using local Ollama, check that it is running. Or add a free Groq API key in Settings for instant answers."
