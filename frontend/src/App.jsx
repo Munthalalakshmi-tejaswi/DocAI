@@ -3,6 +3,7 @@ import Sidebar from "./components/Sidebar";
 import DocumentViewer from "./components/DocumentViewer";
 import ChatPane from "./components/ChatPane";
 import ApiSettingsModal from "./components/ApiSettingsModal";
+import ProfileModal from "./components/ProfileModal";
 import { uploadPDF, sendQuestion, deleteDocument } from "./services/api";
 import "./App.css";
 
@@ -11,48 +12,62 @@ function formatCurrentTime() {
   return now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function getStoredProfile() {
+  if (typeof window !== "undefined") {
+    try {
+      const data = localStorage.getItem("docai_user_profile");
+      if (data) return JSON.parse(data);
+    } catch {}
+  }
+  return {
+    name: "Tejaswi Munthala",
+    email: "mltejaswi1@gmail.com",
+  };
+}
+
+function getStoredHistory() {
+  if (typeof window !== "undefined") {
+    try {
+      const data = localStorage.getItem("docai_search_history");
+      if (data) return JSON.parse(data);
+    } catch {}
+  }
+  return [];
+}
+
 function App() {
   const [documentId, setDocumentId] = useState(null);
   const [filename, setFilename] = useState("");
+  const [uploadDate, setUploadDate] = useState("");
   const [pdfFile, setPdfFile] = useState(null);
   const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
   const [totalPages, setTotalPages] = useState(1);
+
+  // Clean initial messages - No dummy data
   const [messages, setMessages] = useState([
     {
-      id: "initial-bot-1",
+      id: "welcome-init",
       role: "assistant",
-      text: "How can I help you today?",
-      time: "12:54 PM",
-    },
-    {
-      id: "sample-user-1",
-      role: "user",
-      text: "Show me device setup wizard",
-      time: "12:54 PM",
-    },
-    {
-      id: "sample-bot-2",
-      role: "assistant",
-      text: "Setup Wizard:\nWhen you first boot up the phone (or after a factory reset), the setup wizard lets you customize all features, including language, software buttons, gestures, fingerprint unlock, and other features. If you want to change these later, you can do so after setting up the phone in the settings app.",
-      time: "12:55 PM",
-      sources: [1],
+      text: "Welcome to DocAI! Upload a PDF document to begin asking questions and exploring insights.",
+      time: formatCurrentTime(),
     },
   ]);
-  const [searchHistory, setSearchHistory] = useState([
-    "what are the biggest risk in plan?",
-    "write a LinkedIn post about this...",
-    "who will approve the final budget.",
-  ]);
+
+  // Real search history stored in localStorage
+  const [searchHistory, setSearchHistory] = useState(getStoredHistory);
+
+  // Real user profile stored in localStorage
+  const [profile, setProfile] = useState(getStoredProfile);
 
   const [uploadLoading, setUploadLoading] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [highlightText, setHighlightText] = useState("Setup Wizard");
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   const hiddenFileInputRef = useRef(null);
 
-  // Clean up object URLs on unmount or file change
+  // Clean up object URLs
   useEffect(() => {
     return () => {
       if (pdfBlobUrl) {
@@ -61,13 +76,27 @@ function App() {
     };
   }, [pdfBlobUrl]);
 
+  // Save history changes to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem("docai_search_history", JSON.stringify(searchHistory));
+    } catch {}
+  }, [searchHistory]);
+
+  // Save profile changes to localStorage
+  const handleSaveProfile = (newProfile) => {
+    setProfile(newProfile);
+    try {
+      localStorage.setItem("docai_user_profile", JSON.stringify(newProfile));
+    } catch {}
+  };
+
   const handleUpload = async (file) => {
     if (!file) return;
 
     setUploadLoading(true);
 
     try {
-      // Create local preview blob URL immediately
       if (pdfBlobUrl) {
         URL.revokeObjectURL(pdfBlobUrl);
       }
@@ -75,6 +104,12 @@ function App() {
       setPdfFile(file);
       setPdfBlobUrl(localBlob);
       setFilename(file.name);
+      const formattedDate = new Date().toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+      setUploadDate(formattedDate);
 
       const result = await uploadPDF(file);
       const oldDocId = documentId;
@@ -88,7 +123,7 @@ function App() {
         {
           id: crypto.randomUUID(),
           role: "assistant",
-          text: `I have processed "${file.name}" (${result.total_pages || 1} pages). Ask me anything about it!`,
+          text: `Successfully uploaded and processed "${file.name}" (${result.total_pages || 1} pages, ${result.total_chunks || 1} chunks). Ask me anything about it!`,
           time: formatCurrentTime(),
         },
       ]);
@@ -99,7 +134,7 @@ function App() {
     } catch (err) {
       alert(
         err.message ||
-          "Upload failed. Please verify your backend is running or configured in Settings (gear icon)."
+          "Upload failed. Please check that your backend is running or configured via Settings (gear icon)."
       );
     } finally {
       setUploadLoading(false);
@@ -117,10 +152,20 @@ function App() {
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setSearchHistory((prev) => [question, ...prev.filter((q) => q !== question)]);
+
+    // Save real query to search history
+    const historyItem = {
+      id: crypto.randomUUID(),
+      query: question,
+      timestamp: Date.now(),
+    };
+    setSearchHistory((prev) => [
+      historyItem,
+      ...prev.filter((item) => (typeof item === "string" ? item : item.query) !== question),
+    ]);
+
     setChatLoading(true);
 
-    // If no document is uploaded yet, provide an informative response
     if (!documentId) {
       setTimeout(() => {
         setMessages((prev) => [
@@ -128,7 +173,7 @@ function App() {
           {
             id: crypto.randomUUID(),
             role: "assistant",
-            text: "Please upload a PDF document first so I can answer questions grounded in its text! You can click '+ New Document' in the sidebar or drop a PDF into the middle viewer.",
+            text: "Please upload a PDF document first so I can answer questions grounded in its text! You can click '+ New Document' or drop a file in the center viewer.",
             time: formatCurrentTime(),
           },
         ]);
@@ -153,7 +198,7 @@ function App() {
         {
           id: crypto.randomUUID(),
           role: "assistant",
-          text: `Error: ${err.message || "Failed to reach backend."} If your backend was sleeping on Render, please wait 30 seconds and retry.`,
+          text: `Error: ${err.message || "Failed to reach backend."} If using Render free tier, please wait 30 seconds for the backend to wake up and try again.`,
           time: formatCurrentTime(),
         },
       ]);
@@ -163,12 +208,35 @@ function App() {
   };
 
   const handleRegenerate = () => {
-    // Find last user question
     const userMessages = messages.filter((m) => m.role === "user");
     if (userMessages.length > 0) {
       const lastQ = userMessages[userMessages.length - 1].text;
       handleSendQuestion(lastQ);
     }
+  };
+
+  const handleClearChat = () => {
+    setMessages([
+      {
+        id: "cleared-init",
+        role: "assistant",
+        text: filename
+          ? `Chat cleared. Ask me any question about "${filename}".`
+          : "Chat cleared. Upload a PDF to start a new Q&A session.",
+        time: formatCurrentTime(),
+      },
+    ]);
+  };
+
+  const handleClearHistory = () => {
+    setSearchHistory([]);
+    try {
+      localStorage.removeItem("docai_search_history");
+    } catch {}
+  };
+
+  const handleDeleteHistoryItem = (id) => {
+    setSearchHistory((prev) => prev.filter((item) => (item.id || item) !== id));
   };
 
   const handleNewDocument = () => {
@@ -177,7 +245,7 @@ function App() {
 
   return (
     <div className="docai-app-container">
-      {/* Hidden file input */}
+      {/* Hidden file input for file selection */}
       <input
         ref={hiddenFileInputRef}
         type="file"
@@ -195,9 +263,12 @@ function App() {
         {/* Left Sidebar */}
         <Sidebar
           filename={filename}
+          uploadDate={uploadDate}
           onNewDocument={handleNewDocument}
           searchHistory={searchHistory}
           onSelectHistory={handleSendQuestion}
+          onDeleteHistoryItem={handleDeleteHistoryItem}
+          onClearHistory={handleClearHistory}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         />
@@ -210,7 +281,6 @@ function App() {
           pdfBlobUrl={pdfBlobUrl}
           onUpload={handleUpload}
           loading={uploadLoading}
-          highlightText={highlightText}
         />
 
         {/* Right Chat Assistant */}
@@ -218,8 +288,11 @@ function App() {
           messages={messages}
           onSend={handleSendQuestion}
           onRegenerate={handleRegenerate}
+          onClearChat={handleClearChat}
           loading={chatLoading}
           filename={filename}
+          profile={profile}
+          onOpenProfile={() => setIsProfileOpen(true)}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onAttachFile={handleNewDocument}
         />
@@ -229,6 +302,14 @@ function App() {
       <ApiSettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+      />
+
+      {/* User Profile Modal */}
+      <ProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        profile={profile}
+        onSaveProfile={handleSaveProfile}
       />
     </div>
   );

@@ -13,16 +13,21 @@ import {
   Check,
   Globe,
   Settings,
-  Sparkles,
-  ChevronDown,
+  User,
+  Trash2,
+  FilePlus,
+  LogOut,
 } from "lucide-react";
 
 export default function ChatPane({
   messages = [],
   onSend,
   onRegenerate,
+  onClearChat,
   loading,
   filename,
+  profile,
+  onOpenProfile,
   onOpenSettings,
   onAttachFile,
 }) {
@@ -31,15 +36,28 @@ export default function ChatPane({
   const [reactions, setReactions] = useState({});
   const [selectedLanguage, setSelectedLanguage] = useState("English");
   const [showLangMenu, setShowLangMenu] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const chatScrollRef = useRef(null);
   const recognitionRef = useRef(null);
+  const profileMenuRef = useRef(null);
 
   useEffect(() => {
     chatScrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  // Web Speech Recognition for the microphone button
+  // Close profile dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
+        setShowProfileMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Web Speech Recognition
   useEffect(() => {
     if (typeof window !== "undefined") {
       const SpeechRecognition =
@@ -56,13 +74,8 @@ export default function ChatPane({
           setIsListening(false);
         };
 
-        recognition.onerror = () => {
-          setIsListening(false);
-        };
-
-        recognition.onend = () => {
-          setIsListening(false);
-        };
+        recognition.onerror = () => setIsListening(false);
+        recognition.onend = () => setIsListening(false);
 
         recognitionRef.current = recognition;
       }
@@ -81,7 +94,7 @@ export default function ChatPane({
       try {
         recognitionRef.current.start();
         setIsListening(true);
-      } catch (err) {
+      } catch {
         setIsListening(false);
       }
     }
@@ -108,14 +121,23 @@ export default function ChatPane({
     onSend(val);
   };
 
+  const getInitials = (n) => {
+    return (n || "User")
+      .split(" ")
+      .map((p) => p[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
   const languages = ["English", "Spanish", "French", "German", "Hindi"];
 
   return (
     <div className="chat-pane-container">
       {/* Top Header */}
       <div className="chat-pane-header">
-        <span className="chat-pane-doc-label" title={filename || "AI Voice Changer PDF File...."}>
-          {filename ? (filename.length > 25 ? filename.slice(0, 24) + "..." : filename) : "AI Voice Changer PDF File...."}
+        <span className="chat-pane-doc-label" title={filename || "DocAI Chat"}>
+          {filename ? (filename.length > 25 ? filename.slice(0, 24) + "..." : filename) : "DocAI Chat"}
         </span>
 
         <div className="chat-pane-header-actions">
@@ -125,46 +147,103 @@ export default function ChatPane({
 
           <button className="chat-icon-btn notification-btn" title="Notifications">
             <Bell size={18} />
-            <span className="notification-dot" />
           </button>
 
-          <div className="chat-user-profile">
-            <div className="chat-user-avatar">
-              <img
-                src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=80&h=80&q=80"
-                alt="Devon Lane"
-                className="user-avatar-img"
-                onError={(e) => {
-                  e.target.style.display = "none";
-                  e.target.nextSibling.style.display = "flex";
+          {/* Interactive Profile & Three Dots Menu */}
+          <div className="profile-dropdown-container" ref={profileMenuRef}>
+            <div
+              className="chat-user-profile"
+              onClick={() => setShowProfileMenu(!showProfileMenu)}
+              title="Profile & Options"
+            >
+              <div className="chat-user-avatar">
+                <span className="user-avatar-initials">
+                  {getInitials(profile?.name)}
+                </span>
+              </div>
+              <span className="chat-user-name">{profile?.name || "User"}</span>
+              <button
+                type="button"
+                className="chat-more-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowProfileMenu(!showProfileMenu);
                 }}
-              />
-              <span className="user-avatar-fallback">DL</span>
+              >
+                <MoreVertical size={16} />
+              </button>
             </div>
-            <span className="chat-user-name">Devon Lane</span>
-            <button className="chat-more-btn">
-              <MoreVertical size={16} />
-            </button>
+
+            {/* Dropdown Menu */}
+            {showProfileMenu && (
+              <div className="profile-menu-popup">
+                <div className="profile-menu-header">
+                  <div className="menu-avatar-small">
+                    {getInitials(profile?.name)}
+                  </div>
+                  <div className="menu-header-info">
+                    <strong>{profile?.name || "User"}</strong>
+                    <small>{profile?.email || "No email"}</small>
+                  </div>
+                </div>
+
+                <div className="profile-menu-divider" />
+
+                <button
+                  type="button"
+                  className="profile-menu-item"
+                  onClick={() => {
+                    setShowProfileMenu(false);
+                    onOpenProfile();
+                  }}
+                >
+                  <User size={15} />
+                  <span>Edit Profile</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="profile-menu-item"
+                  onClick={() => {
+                    setShowProfileMenu(false);
+                    onOpenSettings();
+                  }}
+                >
+                  <Settings size={15} />
+                  <span>API Configuration</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="profile-menu-item"
+                  onClick={() => {
+                    setShowProfileMenu(false);
+                    onAttachFile();
+                  }}
+                >
+                  <FilePlus size={15} />
+                  <span>Upload New PDF</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="profile-menu-item danger"
+                  onClick={() => {
+                    setShowProfileMenu(false);
+                    onClearChat();
+                  }}
+                >
+                  <Trash2 size={15} />
+                  <span>Clear Chat Messages</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* Messages Scroll Area */}
       <div className="chat-messages-area">
-        {/* Welcome message */}
-        <div className="chat-msg-row bot-row">
-          <div className="chat-bot-avatar">
-            <div className="swirl-icon-small" />
-          </div>
-          <div className="chat-bubble-container">
-            <div className="chat-bubble bot-bubble">
-              How can I help you today?
-            </div>
-            <span className="msg-timestamp">12:54 PM</span>
-          </div>
-        </div>
-
-        {/* Dynamic messages */}
         {messages.map((msg) => {
           const isUser = msg.role === "user";
           return (
@@ -190,21 +269,21 @@ export default function ChatPane({
                 </div>
 
                 <div className="msg-meta-row">
-                  <span className="msg-timestamp">{msg.time || "12:55 PM"}</span>
+                  <span className="msg-timestamp">{msg.time}</span>
 
                   {!isUser && (
                     <div className="msg-actions">
                       <button
                         className={`action-btn ${reactions[msg.id] === "up" ? "active" : ""}`}
                         onClick={() => handleReaction(msg.id, "up")}
-                        title="Good response"
+                        title="Helpful"
                       >
                         <ThumbsUp size={13} />
                       </button>
                       <button
                         className={`action-btn ${reactions[msg.id] === "down" ? "active" : ""}`}
                         onClick={() => handleReaction(msg.id, "down")}
-                        title="Poor response"
+                        title="Not helpful"
                       >
                         <ThumbsDown size={13} />
                       </button>
@@ -213,7 +292,11 @@ export default function ChatPane({
                         onClick={() => handleCopy(msg.id, msg.text)}
                         title="Copy text"
                       >
-                        {copiedId === msg.id ? <Check size={13} className="text-green" /> : <Copy size={13} />}
+                        {copiedId === msg.id ? (
+                          <Check size={13} className="text-green" />
+                        ) : (
+                          <Copy size={13} />
+                        )}
                       </button>
                     </div>
                   )}
@@ -222,15 +305,9 @@ export default function ChatPane({
 
               {isUser && (
                 <div className="chat-user-avatar-msg">
-                  <img
-                    src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=80&h=80&q=80"
-                    alt="You"
-                    className="avatar-msg-img"
-                    onError={(e) => {
-                      e.target.style.display = "none";
-                    }}
-                  />
-                  <span className="avatar-msg-fallback">DL</span>
+                  <span className="avatar-msg-initials">
+                    {getInitials(profile?.name)}
+                  </span>
                 </div>
               )}
             </div>
@@ -250,7 +327,7 @@ export default function ChatPane({
                   <span />
                   <span />
                 </div>
-                <span>DocAI is analyzing document...</span>
+                <span>DocAI is searching and generating answer...</span>
               </div>
             </div>
           </div>
@@ -259,8 +336,8 @@ export default function ChatPane({
         <div ref={chatScrollRef} />
       </div>
 
-      {/* Regenerate Pill */}
-      {messages.length > 0 && (
+      {/* Regenerate Pill (Only when there are user questions) */}
+      {messages.some((m) => m.role === "user") && (
         <div className="regenerate-container">
           <button
             className="regenerate-btn"
@@ -288,7 +365,7 @@ export default function ChatPane({
           <input
             type="text"
             className="chat-main-input"
-            placeholder="Send a message"
+            placeholder={filename ? "Ask a question about this document..." : "Upload a PDF first to ask questions"}
             value={inputQuestion}
             onChange={(e) => setInputQuestion(e.target.value)}
             disabled={loading}
@@ -304,7 +381,6 @@ export default function ChatPane({
               >
                 <Globe size={14} />
                 <span>{selectedLanguage}</span>
-                <ChevronDown size={12} />
               </button>
 
               {showLangMenu && (
