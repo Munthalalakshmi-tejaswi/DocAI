@@ -8,7 +8,12 @@ except ImportError:
 
 
 DEFAULT_CHAT_MODEL = "llama3.2:3b"
-DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
+GROQ_MODELS = [
+    os.getenv("DOC_AI_MODEL", "qwen/qwen3.8-27b"),
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "openai/gpt-oss-120b",
+]
 
 
 def generate_answer(
@@ -47,22 +52,30 @@ def generate_answer(
     )
 
     # Check for Groq API Key (passed from request header/body or environment)
-    effective_groq_key = (groq_api_key or os.getenv("GROQ_API_KEY", "")).strip()
+    effective_groq_key = (
+        groq_api_key or os.getenv("GROQ_API_KEY", "")
+    ).strip()
 
     if effective_groq_key and Groq is not None:
-        model_name = os.getenv("DOC_AI_MODEL", DEFAULT_GROQ_MODEL)
         try:
             client = Groq(api_key=effective_groq_key)
-            completion = client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.1,
-                max_tokens=500,
-            )
-            return completion.choices[0].message.content.strip()
+            for model_candidate in GROQ_MODELS:
+                try:
+                    completion = client.chat.completions.create(
+                        model=model_candidate,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        temperature=0.1,
+                        max_tokens=600,
+                    )
+                    content = completion.choices[0].message.content
+                    if content and content.strip():
+                        return content.strip()
+                except Exception as model_err:
+                    print(f"Groq model {model_candidate} not available: {model_err}")
+                    continue
         except Exception as exc:
             print(f"Groq API call warning: {exc}, falling back to Ollama...")
 
