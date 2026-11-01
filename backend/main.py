@@ -342,11 +342,32 @@ def chat_with_pdf(
 
 
 # --------------------------------------------------
+# Get document status API
+# --------------------------------------------------
+
+@app.get("/documents/{document_id}")
+def get_document_info(document_id: str):
+    if document_id not in documents:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found.",
+        )
+    doc = documents[document_id]
+    return {
+        "document_id": document_id,
+        "filename": doc["filename"],
+        "total_pages": doc["total_pages"],
+        "total_chunks": doc["total_chunks"],
+    }
+
+
+# --------------------------------------------------
 # Delete document API
 # --------------------------------------------------
 
 @app.delete("/documents/{document_id}")
 def delete_document(document_id: str):
+
 
     # Check document existence
     if document_id not in documents:

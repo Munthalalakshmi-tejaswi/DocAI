@@ -30,7 +30,9 @@ export default function ChatPane({
   onOpenProfile,
   onOpenSettings,
   onAttachFile,
+  onCloseDocument,
 }) {
+
   const [inputQuestion, setInputQuestion] = useState("");
   const [copiedId, setCopiedId] = useState(null);
   const [reactions, setReactions] = useState({});
@@ -236,8 +238,23 @@ export default function ChatPane({
                   <Trash2 size={15} />
                   <span>Clear Chat Messages</span>
                 </button>
+
+                {filename && onCloseDocument && (
+                  <button
+                    type="button"
+                    className="profile-menu-item danger"
+                    onClick={() => {
+                      setShowProfileMenu(false);
+                      onCloseDocument();
+                    }}
+                  >
+                    <LogOut size={15} />
+                    <span>Close Current PDF</span>
+                  </button>
+                )}
               </div>
             )}
+
           </div>
         </div>
       </div>

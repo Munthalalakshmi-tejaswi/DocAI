@@ -5,6 +5,11 @@ import ChatPane from "./components/ChatPane";
 import ApiSettingsModal from "./components/ApiSettingsModal";
 import ProfileModal from "./components/ProfileModal";
 import { uploadPDF, sendQuestion, deleteDocument } from "./services/api";
+import {
+  saveActiveSession,
+  loadActiveSession,
+  clearActiveSession,
+} from "./services/storage";
 import "./App.css";
 
 function formatCurrentTime() {
@@ -35,6 +40,13 @@ function getStoredHistory() {
   return [];
 }
 
+const DEFAULT_WELCOME_MSG = {
+  id: "welcome-init",
+  role: "assistant",
+  text: "Welcome to DocAI! Upload a PDF document to begin asking questions and exploring insights.",
+  time: formatCurrentTime(),
+};
+
 function App() {
   const [documentId, setDocumentId] = useState(null);
   const [filename, setFilename] = useState("");
@@ -42,16 +54,7 @@ function App() {
   const [pdfFile, setPdfFile] = useState(null);
   const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
   const [totalPages, setTotalPages] = useState(1);
-
-  // Clean initial messages - No dummy data
-  const [messages, setMessages] = useState([
-    {
-      id: "welcome-init",
-      role: "assistant",
-      text: "Welcome to DocAI! Upload a PDF document to begin asking questions and exploring insights.",
-      time: formatCurrentTime(),
-    },
-  ]);
+  const [messages, setMessages] = useState([DEFAULT_WELCOME_MSG]);
 
   // Real search history stored in localStorage
   const [searchHistory, setSearchHistory] = useState(getStoredHistory);
@@ -66,15 +69,57 @@ function App() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   const hiddenFileInputRef = useRef(null);
+  const restoredSessionRef = useRef(false);
 
-  // Clean up object URLs
+  // 1. Restore document session from IndexedDB on page load / refresh
   useEffect(() => {
-    return () => {
-      if (pdfBlobUrl) {
-        URL.revokeObjectURL(pdfBlobUrl);
+    let isMounted = true;
+
+    async function restoreSession() {
+      try {
+        const session = await loadActiveSession();
+        if (session && isMounted) {
+          restoredSessionRef.current = true;
+          setDocumentId(session.documentId);
+          setFilename(session.filename);
+          setUploadDate(session.uploadDate || "");
+          setTotalPages(session.totalPages || 1);
+
+          if (session.messages && session.messages.length > 0) {
+            setMessages(session.messages);
+          }
+
+          if (session.fileBlob) {
+            setPdfFile(session.fileBlob);
+            const objectUrl = URL.createObjectURL(session.fileBlob);
+            setPdfBlobUrl(objectUrl);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not restore session from storage:", err);
       }
+    }
+
+    restoreSession();
+
+    return () => {
+      isMounted = false;
     };
-  }, [pdfBlobUrl]);
+  }, []);
+
+  // 2. Persist active document session whenever it changes
+  useEffect(() => {
+    if (documentId && pdfFile) {
+      saveActiveSession({
+        documentId,
+        filename,
+        uploadDate,
+        totalPages,
+        fileBlob: pdfFile,
+        messages,
+      });
+    }
+  }, [documentId, filename, uploadDate, totalPages, pdfFile, messages]);
 
   // Save history changes to localStorage
   useEffect(() => {
@@ -121,15 +166,26 @@ function App() {
       setUploadDate(formattedDate);
 
       // Add a greeting for the newly uploaded document
-      setMessages((prev) => [
-        ...prev,
+      const newMessages = [
+        ...messages.filter((m) => m.id !== "welcome-init"),
         {
           id: crypto.randomUUID(),
           role: "assistant",
           text: `Successfully uploaded and processed "${file.name}" (${result.total_pages || 1} pages, ${result.total_chunks || 1} chunks). Ask me anything about it!`,
           time: formatCurrentTime(),
         },
-      ]);
+      ];
+      setMessages(newMessages);
+
+      // Save to IndexedDB immediately
+      saveActiveSession({
+        documentId: result.document_id,
+        filename: result.filename || file.name,
+        uploadDate: formattedDate,
+        totalPages: result.total_pages || 1,
+        fileBlob: file,
+        messages: newMessages,
+      });
 
       if (oldDocId) {
         deleteDocument(oldDocId).catch(() => {});
@@ -155,7 +211,6 @@ function App() {
       setUploadLoading(false);
     }
   };
-
 
   const handleSendQuestion = async (question) => {
     if (!question.trim()) return;
@@ -199,7 +254,28 @@ function App() {
     }
 
     try {
-      const result = await sendQuestion(documentId, question);
+      let activeDocId = documentId;
+
+      let result;
+      try {
+        result = await sendQuestion(activeDocId, question);
+      } catch (firstErr) {
+        // If backend was restarted and lost in-memory index, auto-reupload saved blob in background!
+        const errMsg = String(firstErr.message || "").toLowerCase();
+        if (pdfFile && (errMsg.includes("not found") || errMsg.includes("404"))) {
+          try {
+            const reUp = await uploadPDF(pdfFile);
+            activeDocId = reUp.document_id;
+            setDocumentId(reUp.document_id);
+            result = await sendQuestion(reUp.document_id, question);
+          } catch (reErr) {
+            throw firstErr;
+          }
+        } else {
+          throw firstErr;
+        }
+      }
+
       const assistantMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
@@ -232,7 +308,7 @@ function App() {
   };
 
   const handleClearChat = () => {
-    setMessages([
+    const resetMsg = [
       {
         id: "cleared-init",
         role: "assistant",
@@ -241,7 +317,8 @@ function App() {
           : "Chat cleared. Upload a PDF to start a new Q&A session.",
         time: formatCurrentTime(),
       },
-    ]);
+    ];
+    setMessages(resetMsg);
   };
 
   const handleClearHistory = () => {
@@ -257,6 +334,23 @@ function App() {
 
   const handleNewDocument = () => {
     hiddenFileInputRef.current?.click();
+  };
+
+  const handleCloseActiveDocument = async () => {
+    if (pdfBlobUrl) {
+      URL.revokeObjectURL(pdfBlobUrl);
+    }
+    const oldId = documentId;
+    setDocumentId(null);
+    setFilename("");
+    setPdfFile(null);
+    setPdfBlobUrl(null);
+    setUploadDate("");
+    setMessages([DEFAULT_WELCOME_MSG]);
+    await clearActiveSession();
+    if (oldId) {
+      deleteDocument(oldId).catch(() => {});
+    }
   };
 
   return (
@@ -313,6 +407,7 @@ function App() {
           onOpenProfile={() => setIsProfileOpen(true)}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onAttachFile={handleNewDocument}
+          onCloseDocument={handleCloseActiveDocument}
         />
       </div>
 
