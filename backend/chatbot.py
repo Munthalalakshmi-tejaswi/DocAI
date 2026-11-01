@@ -1,19 +1,24 @@
 import os
 import ollama
 
+try:
+    from groq import Groq
+except ImportError:
+    Groq = None
+
 
 DEFAULT_CHAT_MODEL = "llama3.2:3b"
+DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
 
 
 def generate_answer(question: str, retrieved_chunks: list[dict]) -> str:
     """
-    Ask the local Ollama model to answer using only the retrieved PDF text.
-    Set DOC_AI_MODEL in the environment to use a different pulled Ollama model.
+    Generate an answer using only the retrieved PDF text.
+    If GROQ_API_KEY is set in the environment, it uses Groq Cloud API (free 24/7 cloud).
+    Otherwise, it uses the local Ollama model.
     """
     if not retrieved_chunks:
         return "I could not find relevant information in the uploaded document."
-
-    model_name = os.getenv("DOC_AI_MODEL", DEFAULT_CHAT_MODEL)
 
     context_parts = []
     for chunk in retrieved_chunks:
@@ -39,6 +44,27 @@ def generate_answer(question: str, retrieved_chunks: list[dict]) -> str:
         "Answer the question using the document context above."
     )
 
+    # If GROQ_API_KEY is configured (e.g. in cloud production on Render)
+    groq_api_key = os.getenv("GROQ_API_KEY")
+    if groq_api_key and Groq is not None:
+        model_name = os.getenv("DOC_AI_MODEL", DEFAULT_GROQ_MODEL)
+        try:
+            client = Groq(api_key=groq_api_key)
+            completion = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+            return completion.choices[0].message.content.strip()
+        except Exception as exc:
+            raise RuntimeError(
+                f"Could not get a response from Groq using model '{model_name}': {exc}"
+            ) from exc
+
+    # Default to local Ollama
+    model_name = os.getenv("DOC_AI_MODEL", DEFAULT_CHAT_MODEL)
     try:
         response = ollama.chat(
             model=model_name,
@@ -53,3 +79,4 @@ def generate_answer(question: str, retrieved_chunks: list[dict]) -> str:
             f"Could not get a response from Ollama using model '{model_name}'. "
             "Check that Ollama is running and that the model has been downloaded."
         ) from exc
+
