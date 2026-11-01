@@ -1,12 +1,30 @@
+export function getApiBaseUrl() {
+  if (typeof window !== "undefined") {
+    const saved = localStorage.getItem("docai_api_url");
+    if (saved && saved.trim()) return saved.trim().replace(/\/$/, "");
+  }
+  return (import.meta.env.VITE_API_URL || "https://docai-backend.onrender.com").replace(/\/$/, "");
+}
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+export function setApiBaseUrl(url) {
+  if (typeof window !== "undefined") {
+    if (url && url.trim()) {
+      localStorage.setItem("docai_api_url", url.trim().replace(/\/$/, ""));
+    } else {
+      localStorage.removeItem("docai_api_url");
+    }
+  }
+}
 
 async function request(path, options) {
+  const baseUrl = getApiBaseUrl();
   let response;
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, options);
-  } catch {
-    throw new Error("Can't reach DocAI right now. Check that the backend is running and try again.");
+    response = await fetch(`${baseUrl}${path}`, options);
+  } catch (err) {
+    throw new Error(
+      `Cannot connect to backend at ${baseUrl}. If using Render free tier, it may take 40-50s to wake up from idle. Check settings or verify backend status.`
+    );
   }
 
   const payload = await response.json().catch(() => ({}));
@@ -15,6 +33,11 @@ async function request(path, options) {
   }
   return payload;
 }
+
+// Health check
+export const checkHealth = async () => {
+  return request("/health", { method: "GET" });
+};
 
 // Upload PDF document
 export const uploadPDF = async (file) => {
