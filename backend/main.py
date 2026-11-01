@@ -33,31 +33,17 @@ app = FastAPI(
 
 
 # --------------------------------------------------
-# CORS configuration
+# CORS configuration (allows Vercel, localhost, previews)
 # --------------------------------------------------
 
-raw_origins = os.getenv("FRONTEND_ORIGINS", "*").strip()
-if raw_origins == "*":
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=False,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-else:
-    frontend_origins = [
-        origin.strip()
-        for origin in raw_origins.split(",")
-        if origin.strip()
-    ]
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=frontend_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"^https?:\/\/.*",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+)
 
 
 

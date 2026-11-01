@@ -1,14 +1,23 @@
+import gc
 import faiss
 import numpy as np
+import torch
 from sentence_transformers import SentenceTransformer
 
+# Limit PyTorch CPU threads to avoid memory / CPU spikes on Render free tier
+try:
+    torch.set_num_threads(1)
+except Exception:
+    pass
 
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 def load_embedding_model() -> SentenceTransformer:
     """Load the sentence-transformer model used for both documents and questions."""
-    return SentenceTransformer(EMBEDDING_MODEL_NAME)
+    model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+    model.eval()
+    return model
 
 
 def create_vector_database(
@@ -23,17 +32,20 @@ def create_vector_database(
         raise ValueError("There is no text available to create a search index.")
 
     texts = [chunk["text"] for chunk in chunks]
-    vectors = embedding_model.encode(
-        texts,
-        convert_to_numpy=True,
-        show_progress_bar=False,
-    )
+    with torch.no_grad():
+        vectors = embedding_model.encode(
+            texts,
+            batch_size=8,
+            convert_to_numpy=True,
+            show_progress_bar=False,
+        )
 
     vectors = np.asarray(vectors, dtype="float32")
     faiss.normalize_L2(vectors)
 
     index = faiss.IndexFlatIP(vectors.shape[1])
     index.add(vectors)
+    gc.collect()
 
     return index
 
@@ -49,11 +61,13 @@ def search_similar_chunks(
     if not question.strip() or index.ntotal == 0:
         return []
 
-    question_vector = embedding_model.encode(
-        [question],
-        convert_to_numpy=True,
-        show_progress_bar=False,
-    )
+    with torch.no_grad():
+        question_vector = embedding_model.encode(
+            [question],
+            batch_size=1,
+            convert_to_numpy=True,
+            show_progress_bar=False,
+        )
     question_vector = np.asarray(question_vector, dtype="float32")
     faiss.normalize_L2(question_vector)
 

@@ -50,11 +50,14 @@ async function request(path, options) {
   let response;
 
   try {
-    response = await fetch(url, options);
+    response = await fetch(url, {
+      ...options,
+      mode: "cors",
+    });
   } catch (err) {
     const targetMsg = baseUrl || "http://127.0.0.1:8000";
     throw new Error(
-      `Cannot connect to backend at ${targetMsg}. If using Render free tier, please wait 40-50s for it to wake up from idle, or check Settings (⚙️ gear icon).`
+      `Cannot connect to backend at ${targetMsg} (${err.message}). If using Render free tier, please wait 40-50s for it to wake up from idle, or check Settings (⚙️ gear icon).`
     );
   }
 

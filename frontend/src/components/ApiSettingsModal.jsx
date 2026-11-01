@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { X, CheckCircle2, AlertCircle, RefreshCw, Zap } from "lucide-react";
 import {
   getApiBaseUrl,
@@ -8,19 +8,30 @@ import {
   setGroqApiKey,
 } from "../services/api";
 
+const DEFAULT_CLOUD_URL = "https://docai-backend-xpnh.onrender.com";
+
 export default function ApiSettingsModal({ isOpen, onClose }) {
-  const [url, setUrl] = useState(getApiBaseUrl());
-  const [groqKey, setGroqKey] = useState(getGroqApiKey());
+  const [url, setUrl] = useState(() => getApiBaseUrl() || DEFAULT_CLOUD_URL);
+  const [groqKey, setGroqKey] = useState(getGroqApiKey);
   const [status, setStatus] = useState(null); // { type: 'success'|'error', message: string }
   const [testing, setTesting] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setUrl(getApiBaseUrl() || DEFAULT_CLOUD_URL);
+      setGroqKey(getGroqApiKey());
+      setStatus(null);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   const handleTest = async () => {
+    const targetUrl = (url || DEFAULT_CLOUD_URL).trim().replace(/\/$/, "");
     setTesting(true);
     setStatus(null);
     try {
-      setApiBaseUrl(url);
+      setApiBaseUrl(targetUrl);
       const res = await checkHealth();
       setStatus({
         type: "success",
@@ -37,7 +48,8 @@ export default function ApiSettingsModal({ isOpen, onClose }) {
   };
 
   const handleSave = () => {
-    setApiBaseUrl(url);
+    const targetUrl = (url || DEFAULT_CLOUD_URL).trim().replace(/\/$/, "");
+    setApiBaseUrl(targetUrl);
     setGroqApiKey(groqKey);
     onClose();
     window.location.reload();
