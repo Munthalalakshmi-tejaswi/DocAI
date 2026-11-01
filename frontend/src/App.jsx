@@ -281,6 +281,8 @@ function App() {
           pdfBlobUrl={pdfBlobUrl}
           onUpload={handleUpload}
           loading={uploadLoading}
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
         />
 
         {/* Right Chat Assistant */}

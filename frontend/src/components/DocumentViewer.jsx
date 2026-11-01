@@ -18,6 +18,8 @@ export default function DocumentViewer({
   pdfBlobUrl,
   onUpload,
   loading,
+  sidebarCollapsed,
+  onToggleSidebar,
 }) {
   const [zoom, setZoom] = useState(100);
   const [currentPage, setCurrentPage] = useState(1);
@@ -62,11 +64,23 @@ export default function DocumentViewer({
     <div className="document-viewer-pane">
       {/* Top Header */}
       <div className="viewer-header">
-        <div className="viewer-title-group">
-          <span className="viewer-doc-name" title={filename || "No document loaded"}>
-            {filename || "No document loaded"}
-          </span>
-          {filename && <ChevronDown size={16} className="viewer-chevron" />}
+        <div className="viewer-header-left">
+          {sidebarCollapsed && (
+            <button
+              type="button"
+              className="open-sidebar-btn"
+              onClick={onToggleSidebar}
+              title="Open sidebar"
+            >
+              <ChevronsRight size={18} />
+            </button>
+          )}
+          <div className="viewer-title-group">
+            <span className="viewer-doc-name" title={filename || "No document loaded"}>
+              {filename || "No document loaded"}
+            </span>
+            {filename && <ChevronDown size={16} className="viewer-chevron" />}
+          </div>
         </div>
       </div>
 
