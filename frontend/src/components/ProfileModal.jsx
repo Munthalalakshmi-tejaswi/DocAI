@@ -1,10 +1,17 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { X, User, Mail, Shield, Check } from "lucide-react";
 
 export default function ProfileModal({ isOpen, onClose, profile, onSaveProfile }) {
-  const [name, setName] = useState(profile?.name || "Tejaswi Munthala");
-  const [email, setEmail] = useState(profile?.email || "mltejaswi1@gmail.com");
+  const [name, setName] = useState(profile?.name || "User");
+  const [email, setEmail] = useState(profile?.email || "");
   const [savedSuccess, setSavedSuccess] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setName(profile?.name || "User");
+      setEmail(profile?.email || "");
+    }
+  }, [isOpen, profile]);
 
   if (!isOpen) return null;
 
@@ -23,12 +30,14 @@ export default function ProfileModal({ isOpen, onClose, profile, onSaveProfile }
   };
 
   const getInitials = (n) => {
-    return n
+    return (n || "User")
+      .trim()
       .split(" ")
+      .filter(Boolean)
       .map((part) => part[0])
       .join("")
       .toUpperCase()
-      .slice(0, 2);
+      .slice(0, 2) || "U";
   };
 
   return (

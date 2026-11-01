@@ -4,7 +4,7 @@ import DocumentViewer from "./components/DocumentViewer";
 import ChatPane from "./components/ChatPane";
 import ApiSettingsModal from "./components/ApiSettingsModal";
 import ProfileModal from "./components/ProfileModal";
-import { uploadPDF, sendQuestion, deleteDocument } from "./services/api";
+import { uploadPDF, sendQuestion, deleteDocument, getApiBaseUrl } from "./services/api";
 import {
   saveActiveSession,
   loadActiveSession,
@@ -21,12 +21,28 @@ function getStoredProfile() {
   if (typeof window !== "undefined") {
     try {
       const data = localStorage.getItem("docai_user_profile");
-      if (data) return JSON.parse(data);
+      if (data) {
+        const parsed = JSON.parse(data);
+        // Clear out any old hardcoded personal details from localStorage
+        if (
+          parsed?.name?.toLowerCase().includes("tejaswi") ||
+          parsed?.name?.toLowerCase().includes("munthala") ||
+          parsed?.email?.toLowerCase().includes("tejaswi")
+        ) {
+          const defaultProfile = { name: "User", email: "" };
+          localStorage.setItem("docai_user_profile", JSON.stringify(defaultProfile));
+          return defaultProfile;
+        }
+        return {
+          name: parsed?.name?.trim() || "User",
+          email: parsed?.email?.trim() || "",
+        };
+      }
     } catch {}
   }
   return {
-    name: "Tejaswi Munthala",
-    email: "mltejaswi1@gmail.com",
+    name: "User",
+    email: "",
   };
 }
 
@@ -67,6 +83,13 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [apiUrl, setApiUrl] = useState(getApiBaseUrl);
+
+  const isCloudWithoutBackend =
+    typeof window !== "undefined" &&
+    window.location.hostname !== "localhost" &&
+    window.location.hostname !== "127.0.0.1" &&
+    !apiUrl;
 
   const hiddenFileInputRef = useRef(null);
   const restoredSessionRef = useRef(false);
@@ -197,6 +220,17 @@ function App() {
       setPdfFile(null);
       setPdfBlobUrl(null);
       setFilename("");
+
+      // Auto open settings if backend URL is not configured or failed to connect
+      if (
+        !getApiBaseUrl() ||
+        (err.message &&
+          (err.message.includes("Backend URL is not configured") ||
+            err.message.includes("Cannot connect") ||
+            err.message.includes("404")))
+      ) {
+        setIsSettingsOpen(true);
+      }
 
       setMessages((prev) => [
         ...prev,
@@ -368,6 +402,23 @@ function App() {
         }}
       />
 
+      {/* Banner shown on cloud/Vercel when backend URL is not yet connected */}
+      {isCloudWithoutBackend && (
+        <div className="docai-backend-alert-banner">
+          <span className="banner-icon">⚠️</span>
+          <span className="banner-text">
+            <strong>Backend Connection Required:</strong> This cloud deployment needs your Render backend URL to upload PDFs and answer questions.
+          </span>
+          <button
+            type="button"
+            className="banner-btn"
+            onClick={() => setIsSettingsOpen(true)}
+          >
+            ⚙️ Connect Backend
+          </button>
+        </div>
+      )}
+
       {/* Main 3-Pane Desktop Layout */}
       <div className="docai-three-pane-layout">
         {/* Left Sidebar */}
@@ -414,7 +465,10 @@ function App() {
       {/* Backend API Configuration Modal */}
       <ApiSettingsModal
         isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+        onClose={() => {
+          setIsSettingsOpen(false);
+          setApiUrl(getApiBaseUrl());
+        }}
       />
 
       {/* User Profile Modal */}

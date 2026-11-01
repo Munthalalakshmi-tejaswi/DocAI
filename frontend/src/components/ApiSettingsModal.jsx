@@ -55,19 +55,30 @@ export default function ApiSettingsModal({ isOpen, onClose }) {
 
         <div className="modal-body">
           <p className="modal-desc">
-            Configure your API connection and optional cloud acceleration key for instant answers.
+            Connect this frontend to your deployed Render backend.
           </p>
 
+          <div className="modal-tip" style={{ marginBottom: "16px", background: "#eff6ff", borderColor: "#bfdbfe", color: "#1e40af" }}>
+            <strong>How to get your Render URL:</strong>
+            <ol style={{ paddingLeft: "18px", marginTop: "6px", lineHeight: "1.6" }}>
+              <li>Open your <a href="https://dashboard.render.com" target="_blank" rel="noreferrer" style={{ textDecoration: "underline", color: "#2563eb", fontWeight: "600" }}>Render Dashboard</a>.</li>
+              <li>Click on your service (<strong>docai-backend</strong>).</li>
+              <li>Copy the URL displayed directly below the title (looks like <code>https://docai-backend-xxxx.onrender.com</code>).</li>
+              <li>Paste it in the box below, click <strong>Test</strong>, then <strong>Save & Apply</strong>!</li>
+            </ol>
+          </div>
+
           {/* Backend API URL */}
-          <label className="modal-label">API Base URL</label>
+          <label className="modal-label">Render Backend API URL</label>
           <div className="modal-input-row">
             <input
               type="text"
               className="modal-input"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="http://127.0.0.1:8000"
+              placeholder="https://docai-backend-xxxx.onrender.com"
             />
+
             <button
               type="button"
               className="modal-test-btn"

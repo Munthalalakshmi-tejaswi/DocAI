@@ -125,11 +125,13 @@ export default function ChatPane({
 
   const getInitials = (n) => {
     return (n || "User")
+      .trim()
       .split(" ")
+      .filter(Boolean)
       .map((p) => p[0])
       .join("")
       .toUpperCase()
-      .slice(0, 2);
+      .slice(0, 2) || "U";
   };
 
   const languages = ["English", "Spanish", "French", "German", "Hindi"];
@@ -185,7 +187,7 @@ export default function ChatPane({
                   </div>
                   <div className="menu-header-info">
                     <strong>{profile?.name || "User"}</strong>
-                    <small>{profile?.email || "No email"}</small>
+                    {profile?.email ? <small>{profile.email}</small> : <small style={{ opacity: 0.6 }}>DocAI Account</small>}
                   </div>
                 </div>
 

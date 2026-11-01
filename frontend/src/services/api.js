@@ -15,7 +15,7 @@ export function getApiBaseUrl() {
     }
   }
 
-  // In cloud production, use configured VITE_API_URL or default to empty for reverse proxy
+  // In cloud production, use configured VITE_API_URL or default to empty
   return (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 }
 
@@ -31,20 +31,38 @@ export function setApiBaseUrl(url) {
 
 async function request(path, options) {
   const baseUrl = getApiBaseUrl();
+
+  // If on cloud/Vercel and no backend URL is set, alert the user with actionable instructions
+  if (
+    !baseUrl &&
+    typeof window !== "undefined" &&
+    window.location.hostname !== "localhost" &&
+    window.location.hostname !== "127.0.0.1"
+  ) {
+    throw new Error(
+      "Backend URL is not configured yet! Click the Settings (⚙️ gear icon) at the top right, paste your Render backend URL (e.g. https://docai-backend-xxxx.onrender.com), and click Save."
+    );
+  }
+
   const url = baseUrl ? `${baseUrl}${path}` : path;
   let response;
 
   try {
     response = await fetch(url, options);
   } catch (err) {
-    const targetMsg = baseUrl || "local backend (http://127.0.0.1:8000)";
+    const targetMsg = baseUrl || "http://127.0.0.1:8000";
     throw new Error(
-      `Cannot connect to backend at ${targetMsg}. Please make sure your backend is running, or configure your API URL via Settings (gear icon).`
+      `Cannot connect to backend at ${targetMsg}. If using Render free tier, please wait 40-50s for it to wake up from idle, or check Settings (⚙️ gear icon).`
     );
   }
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (response.status === 404 && (!baseUrl || (typeof window !== "undefined" && baseUrl.includes(window.location.hostname)))) {
+      throw new Error(
+        "Backend not found on this domain. Please click Settings (⚙️ gear icon) at the top right and enter your Render backend URL."
+      );
+    }
     throw new Error(payload.detail || `Request failed (${response.status}). Please try again.`);
   }
   return payload;
@@ -108,4 +126,3 @@ export const sendQuestion = async (documentId, question) => {
 export const deleteDocument = async (documentId) => {
   return request(`/documents/${encodeURIComponent(documentId)}`, { method: "DELETE" });
 };
-

@@ -52,14 +52,62 @@ body, html {
   height: 100vh;
   width: 100vw;
   display: flex;
+  flex-direction: column;
   background: var(--canvas-bg);
   overflow: hidden;
+}
+
+.docai-backend-alert-banner {
+  background: #fef3c7;
+  color: #92400e;
+  border-bottom: 1px solid #fde68a;
+  padding: 8px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  z-index: 100;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.docai-backend-alert-banner .banner-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.docai-backend-alert-banner .banner-text {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.docai-backend-alert-banner .banner-btn {
+  background: #d97706;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+  white-space: nowrap;
+}
+
+.docai-backend-alert-banner .banner-btn:hover {
+  background: #b45309;
+}
+
+.docai-backend-alert-banner .banner-btn:active {
+  transform: scale(0.98);
 }
 
 .docai-three-pane-layout {
   display: flex;
   width: 100%;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
