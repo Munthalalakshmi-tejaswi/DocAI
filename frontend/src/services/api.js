@@ -15,8 +15,10 @@ export function getApiBaseUrl() {
     }
   }
 
-  // In cloud production, use configured VITE_API_URL or default to empty
-  return (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+  // In cloud production, use configured VITE_API_URL or default to your live Render service
+  return (
+    import.meta.env.VITE_API_URL || "https://docai-backend-xpnh.onrender.com"
+  ).replace(/\/$/, "");
 }
 
 export function setApiBaseUrl(url) {
