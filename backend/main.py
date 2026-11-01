@@ -3,9 +3,10 @@ import os
 from uuid import uuid4
 from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+
 
 from chatbot import generate_answer
 from embeddings import (
@@ -76,6 +77,8 @@ embedding_model = None
 class ChatRequest(BaseModel):
     document_id: str = Field(..., min_length=1)
     question: str = Field(..., min_length=1, max_length=2000)
+    groq_api_key: str | None = None
+
 
 
 # --------------------------------------------------
@@ -244,7 +247,10 @@ async def upload_pdf(file: UploadFile = File(...)):
 # --------------------------------------------------
 
 @app.post("/chat")
-def chat_with_pdf(request: ChatRequest):
+def chat_with_pdf(
+    request: ChatRequest,
+    x_groq_api_key: str | None = Header(None, alias="X-Groq-Api-Key"),
+):
 
     question = request.question.strip()
 
@@ -274,8 +280,8 @@ def chat_with_pdf(request: ChatRequest):
     try:
         print(f"Question received: {question}")
 
-        # Search relevant PDF chunks
-        k = min(len(document["chunks"]), 6)
+        # Search top 4 most relevant PDF chunks (optimal for accuracy and speed)
+        k = min(len(document["chunks"]), 4)
         relevant_chunks = search_similar_chunks(
             question=question,
             index=document["index"],
@@ -283,7 +289,6 @@ def chat_with_pdf(request: ChatRequest):
             embedding_model=embedding_model,
             top_k=k,
         )
-
 
         # Check search results
         if not relevant_chunks:
@@ -296,11 +301,14 @@ def chat_with_pdf(request: ChatRequest):
                 "sources": [],
             }
 
-        # Generate AI answer using Ollama
+        # Generate AI answer (Groq if key provided, or optimized Ollama)
+        effective_key = request.groq_api_key or x_groq_api_key
         answer = generate_answer(
             question,
             relevant_chunks,
+            groq_api_key=effective_key,
         )
+
 
         # Get source page numbers
         source_pages = sorted(

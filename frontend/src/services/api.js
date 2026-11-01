@@ -66,16 +66,40 @@ export const uploadPDF = async (file) => {
   });
 };
 
+export function getGroqApiKey() {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("docai_groq_key") || "";
+  }
+  return "";
+}
+
+export function setGroqApiKey(key) {
+  if (typeof window !== "undefined") {
+    if (key && key.trim()) {
+      localStorage.setItem("docai_groq_key", key.trim());
+    } else {
+      localStorage.removeItem("docai_groq_key");
+    }
+  }
+}
+
 // Send question to chatbot
 export const sendQuestion = async (documentId, question) => {
+  const groqKey = getGroqApiKey();
+  const headers = {
+    "Content-Type": "application/json",
+  };
+  if (groqKey) {
+    headers["X-Groq-Api-Key"] = groqKey;
+  }
+
   return request("/chat", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify({
       question: question,
       document_id: documentId,
+      groq_api_key: groqKey || null,
     }),
   });
 };
@@ -84,3 +108,4 @@ export const sendQuestion = async (documentId, question) => {
 export const deleteDocument = async (documentId) => {
   return request(`/documents/${encodeURIComponent(documentId)}`, { method: "DELETE" });
 };
+

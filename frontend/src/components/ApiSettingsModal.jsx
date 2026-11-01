@@ -1,9 +1,16 @@
 import React, { useState } from "react";
-import { X, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
-import { getApiBaseUrl, setApiBaseUrl, checkHealth } from "../services/api";
+import { X, CheckCircle2, AlertCircle, RefreshCw, Zap } from "lucide-react";
+import {
+  getApiBaseUrl,
+  setApiBaseUrl,
+  checkHealth,
+  getGroqApiKey,
+  setGroqApiKey,
+} from "../services/api";
 
 export default function ApiSettingsModal({ isOpen, onClose }) {
   const [url, setUrl] = useState(getApiBaseUrl());
+  const [groqKey, setGroqKey] = useState(getGroqApiKey());
   const [status, setStatus] = useState(null); // { type: 'success'|'error', message: string }
   const [testing, setTesting] = useState(false);
 
@@ -31,6 +38,7 @@ export default function ApiSettingsModal({ isOpen, onClose }) {
 
   const handleSave = () => {
     setApiBaseUrl(url);
+    setGroqApiKey(groqKey);
     onClose();
     window.location.reload();
   };
@@ -39,7 +47,7 @@ export default function ApiSettingsModal({ isOpen, onClose }) {
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>Backend API Configuration</h3>
+          <h3>Backend & AI Configuration</h3>
           <button className="modal-close-btn" onClick={onClose}>
             <X size={18} />
           </button>
@@ -47,9 +55,10 @@ export default function ApiSettingsModal({ isOpen, onClose }) {
 
         <div className="modal-body">
           <p className="modal-desc">
-            Connect this frontend to your deployed Render backend (e.g. <code>https://docai-backend-xxxx.onrender.com</code>) or local backend (<code>http://127.0.0.1:8000</code>).
+            Configure your API connection and optional cloud acceleration key for instant answers.
           </p>
 
+          {/* Backend API URL */}
           <label className="modal-label">API Base URL</label>
           <div className="modal-input-row">
             <input
@@ -57,7 +66,7 @@ export default function ApiSettingsModal({ isOpen, onClose }) {
               className="modal-input"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://your-backend.onrender.com"
+              placeholder="http://127.0.0.1:8000"
             />
             <button
               type="button"
@@ -68,6 +77,33 @@ export default function ApiSettingsModal({ isOpen, onClose }) {
               {testing ? <RefreshCw size={14} className="spin" /> : "Test"}
             </button>
           </div>
+
+          {/* Groq API Key for Fast Answers */}
+          <label className="modal-label" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <Zap size={14} color="#f59e0b" />
+            Groq API Key (Optional — For Instant &lt;1s Answers)
+          </label>
+          <div className="modal-input-row">
+            <input
+              type="password"
+              className="modal-input"
+              value={groqKey}
+              onChange={(e) => setGroqKey(e.target.value)}
+              placeholder="gsk_... (Leave blank to use local Ollama)"
+            />
+          </div>
+          <p style={{ fontSize: "11.5px", color: "#64748b", margin: "-6px 0 14px", lineHeight: "1.4" }}>
+            Get a free key at{" "}
+            <a
+              href="https://console.groq.com/keys"
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: "#2563eb", textDecoration: "underline" }}
+            >
+              console.groq.com/keys
+            </a>{" "}
+            to answer in <strong>under 1 second</strong>! If left blank, local Ollama model is used.
+          </p>
 
           {status && (
             <div className={`modal-status ${status.type}`}>
@@ -81,7 +117,7 @@ export default function ApiSettingsModal({ isOpen, onClose }) {
           )}
 
           <div className="modal-tip">
-            <strong>Tip:</strong> If using Render's free tier, the backend spins down after 15 minutes of inactivity. It can take ~40–50 seconds to wake up on the first request.
+            <strong>Speed Tip:</strong> Running AI locally on CPU can take 15–20 seconds per question. Adding a free Groq key speeds up responses to <strong>less than 1 second</strong>.
           </div>
         </div>
 
